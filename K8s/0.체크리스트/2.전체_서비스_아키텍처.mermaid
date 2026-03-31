@@ -1,0 +1,55 @@
+# 1. 전체 서비스 아키텍처 (운영 단계 기준)
+
+graph TD
+    subgraph "External/Office Network"
+        User([사용자/개발자])
+    end
+
+    subgraph "IDC Infrastructure"
+        VIP(가상 IP: 192.168.0.100)
+        Keepalived[Keepalived: 고가용성 관리]
+        HAProxy[HAProxy: L4/L7 로드밸런싱]
+    end
+
+    subgraph "K8s Cluster (RKE2)"
+        Master1[Master 1]
+        Master2[Master 2]
+        Master3[Master 3]
+        Worker1[Worker 1]
+        Worker2[Worker 2]
+    end
+
+    subgraph "Core Services"
+        Rancher[Rancher: 중앙 관리 GUI]
+        Harbor[Harbor: 폐쇄망 이미지 저장소]
+        PromGraf[Prometheus/Grafana: 모니터링]
+        CertMgr[Cert-manager: 사설 인증서 관리]
+    end
+
+    User --> VIP
+    VIP -.-> Keepalived
+    Keepalived --> HAProxy
+    HAProxy --> Master1 & Master2 & Master3
+    Master1 & Master2 & Master3 --- Worker1 & Worker2
+    Worker1 & Worker2 -.-> Harbor & PromGraf & CertMgr
+
+
+# 2. 단계별 핵심 도구 요약
+
+단계	        주요 도구	                     목적	            핵심 포인트
+1. 학습	        Kubeadm, HAProxy, Keepalived    원리 이해	       마스터 노드 고가용성(HA) 수동 구성
+2. 네트워크	    MetalLB (L2/BGP)	            서비스 노출	        IDC 환경에서 LoadBalancer IP 자동 할당
+3. 운영 엔진	RKE2, Rancher	                안정성 & 관리	    보안 강화(CIS), GUI 기반 클러스터 제어
+4. 인그레스	    HAProxy Ingress	                트래픽 관문	        고성능 L7 라우팅 및 SSL 종단 처리
+5. 보안/저장	Cert-manager, Harbor	        인증 & 이미지	    사설 인증서 자동 갱신, 폐쇄망 이미지 관리
+6. 관제/백업	Prometheus, etcd snapshot	    안정성 유지	        장애 감시 및 데이터 유실 방지
+
+
+# 3. 실운영 전환 전 최종 체크리스트
+
+## 네트워크: ESXi 가상 스위치에서 Promiscuous Mode(무차별 모드)가 활성화되었는가?
+## 인증서: config.yaml의 tls-san 목록에 VIP와 도메인이 모두 포함되었는가?
+## 가용성: 마스터 노드는 최소 3대(홀수)로 구성하여 쿼럼(Quorum)을 확보했는가?
+## 보안: 모든 노드에서 Swap이 비활성화되고, 방화벽 포트(6443, 9345, 10250 등)가 열려있는가?
+## 저장소: Prometheus와 Harbor의 데이터가 저장될 외부 스토리지(NFS/StorageClass)가 연결되었는가?
+## 백업: etcd 스냅샷이 최소 6시간 단위로 외부 서버에 안전하게 복사되고 있는가?
